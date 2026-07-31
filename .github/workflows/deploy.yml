@@ -1,0 +1,82 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          cp src/index.js /tmp/check.mjs
+          node --check /tmp/check.mjs
+          echo "syntax ok, bytes: $(wc -c < src/index.js)"
+
+      - name: Upload to Cloudflare
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          R="deploy-report.txt"
+          ACC="74820d71c551391ce31d309c2fcb091c"
+          D1="5d2b95a0-a8c5-4419-9e23-6a677c89981c"
+          echo "== SOMBRA deploy $(date -u) ==" > $R
+
+          cat > /tmp/meta.json <<EOF
+          {
+            "main_module": "index.js",
+            "compatibility_date": "2026-07-01",
+            "keep_bindings": ["secret_text"],
+            "bindings": [
+              { "type": "d1", "name": "DB", "id": "$D1" },
+              { "type": "ai", "name": "AI" }
+            ]
+          }
+          EOF
+
+          echo "--- upload ---" >> $R
+          curl -s -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/$ACC/workers/scripts/sombra" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -F "metadata=@/tmp/meta.json;type=application/json" \
+            -F "index.js=@src/index.js;type=application/javascript+module" \
+            -o /tmp/cf.json || true
+          head -c 700 /tmp/cf.json >> $R
+          echo "" >> $R
+
+          echo "--- enable workers.dev subdomain ---" >> $R
+          curl -s -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/$ACC/workers/scripts/sombra/subdomain" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"enabled":true}' | head -c 300 >> $R
+          echo "" >> $R
+
+          sleep 8
+          echo "--- live check /api/calibration ---" >> $R
+          curl -s "https://sombra.mihov-emil.workers.dev/api/calibration" | head -c 400 >> $R
+          echo "" >> $R
+          echo "--- auth check (expects 401 without token) ---" >> $R
+          curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://sombra.mihov-emil.workers.dev/api/audit" \
+            -H "Content-Type: application/json" \
+            --data '{"text":"deployment smoke test claim"}' >> $R
+          echo "" >> $R
+
+      - name: Commit report
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@emillion-lab"
+          git add deploy-report.txt
+          git commit -m "deploy report [skip ci]" || true
+          git push || true
