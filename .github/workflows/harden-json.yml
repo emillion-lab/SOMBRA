@@ -1,8 +1,9 @@
 name: Harden JSON parsing
 
-# Llama понякога слага изречение около JSON-а или го прерязва.
-# Един опит без прошка означава провален одит. Тук: до три опита,
-# балансирано изваждане на обекта и изрична поправка при повторение.
+# Llama понякога слага изречение около JSON-а. Един опит без прошка
+# означава провален одит. Тук: до три опита и балансирано изваждане.
+# Функцията се намира по сигнатура и се заменя чрез броене на скоби,
+# за да не зависи от отстъпите.
 
 on:
   push:
@@ -21,24 +22,32 @@ jobs:
       - name: Replace the llm helper
         run: |
           python3 - <<'PYEOF'
-          s = open('src/index.js', encoding='utf-8').read()
+          path = 'src/index.js'
+          s = open(path, encoding='utf-8').read()
 
-          old = """async function llm(env, system, user) {
-            const r = await env.AI.run(MODEL, {
-              messages: [
-                { role: 'system', content: system },
-                { role: 'user', content: user },
-              ],
-              max_tokens: 1600,
-              temperature: 0.1,
-            });
-            const t = String(r.response || '').replace(/```json|```/g, '').trim();
-            const a = t.indexOf('{'), b = t.lastIndexOf('}');
-            if (a < 0 || b <= a) throw new Error('Model did not return JSON.');
-            return JSON.parse(t.slice(a, b + 1));
-          }""".replace('\n  ', '\n')
+          sig = 'async function llm(env, system, user) {'
+          i = s.find(sig)
+          assert i != -1, 'llm signature not found'
+          if 'function carve' in s:
+              print('already patched, nothing to do')
+              raise SystemExit(0)
 
-          new = """/* Extract the first balanced {...} object, ignoring braces inside strings. */
+          # край на функцията чрез броене на скоби
+          j = i + len(sig) - 1
+          depth = 0
+          end = None
+          for k in range(j, len(s)):
+              if s[k] == '{':
+                  depth += 1
+              elif s[k] == '}':
+                  depth -= 1
+                  if depth == 0:
+                      end = k + 1
+                      break
+          assert end, 'closing brace not found'
+          print('replacing chars', i, '..', end)
+
+          new = r'''/* Extract the first balanced {...} object, ignoring braces inside strings. */
           function carve(text) {
             const t = String(text || '').replace(/```json|```/g, '');
             const start = t.indexOf('{');
@@ -47,7 +56,7 @@ jobs:
             for (let i = start; i < t.length; i++) {
               const c = t[i];
               if (esc) { esc = false; continue; }
-              if (c === '\\\\') { esc = true; continue; }
+              if (c === '\\') { esc = true; continue; }
               if (c === '"') { inStr = !inStr; continue; }
               if (inStr) continue;
               if (c === '{') depth++;
@@ -60,7 +69,7 @@ jobs:
             let lastErr = 'no attempt';
             for (let attempt = 0; attempt < 3; attempt++) {
               const nudge = attempt === 0 ? '' :
-                '\\n\\nYour previous reply could not be parsed. Output the JSON object and nothing else: ' +
+                '\n\nYour previous reply could not be parsed. Output the JSON object and nothing else: ' +
                 'no greeting, no explanation, no code fence. Start with { and end with }.';
               try {
                 const r = await env.AI.run(MODEL, {
@@ -79,13 +88,14 @@ jobs:
               }
             }
             throw new Error('Model did not return usable JSON after 3 attempts: ' + lastErr);
-          }""".replace('\n  ', '\n')
+          }'''
 
-          n = s.count(old)
-          print('llm helper found:', n)
-          assert n == 1, 'exact helper text not found'
-          s = s.replace(old, new)
-          open('src/index.js', 'w', encoding='utf-8').write(s)
+          # махаме отстъпа, наследен от YAML блока
+          new = '\n'.join(line[10:] if line.startswith(' ' * 10) else line
+                          for line in new.split('\n'))
+
+          s = s[:i] + new + s[end:]
+          open(path, 'w', encoding='utf-8').write(s)
           print('patched, bytes now:', len(s))
           PYEOF
 
@@ -94,7 +104,8 @@ jobs:
           cp src/index.js /tmp/check.mjs
           node --check /tmp/check.mjs
           echo "syntax ok"
-          grep -c "function carve" src/index.js
+          echo "carve present: $(grep -c 'function carve' src/index.js)"
+          echo "retry present: $(grep -c '3 attempts' src/index.js)"
 
       - name: Commit
         run: |
