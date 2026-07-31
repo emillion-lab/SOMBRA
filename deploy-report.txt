@@ -1,0 +1,11 @@
+== SOMBRA deploy Fri Jul 31 04:14:36 UTC 2026 ==
+--- upload ---
+{"success":false,"errors":[{"code":9106,"message":"Missing X-Auth-Key, X-Auth-Email or Authorization headers"}],"messages":[],"result":null}
+
+--- enable workers.dev subdomain ---
+{"success":false,"errors":[{"code":9106,"message":"Missing X-Auth-Key, X-Auth-Email or Authorization headers"}],"messages":[],"result":null}
+
+--- live check /api/calibration ---
+Hello World!
+--- auth check (expects 401 without token) ---
+200
