@@ -1,0 +1,102 @@
+name: Expose retrieval
+
+# Широк интервал може да значи две несъвместими неща: истинско
+# противоречие между двата паса, или празно търсене. Досега изглеждаха
+# еднакво. Тук записваме всички извлечени записи и ги връщаме, за да
+# се вижда дали инструментът е преценил, или е свил рамене.
+
+on:
+  push:
+    paths: ['.github/workflows/expose-retrieval.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch worker
+        run: |
+          python3 - <<'PYEOF'
+          p = 'src/index.js'
+          s = open(p, encoding='utf-8').read()
+
+          # 1. записваме целия извлечен пакет към пускането
+          old = """      .bind(now(), low, high, low, high, 100 - high, 100 - low, String(res.falsifier || '').slice(0, 800), note, runId)"""
+          new = """      .bind(now(), low, high, low, high, 100 - high, 100 - low, String(res.falsifier || '').slice(0, 800), note,
+             JSON.stringify(pack).slice(0, 60000), runId)"""
+          assert s.count(old) == 1, 'bind line not found'
+          s = s.replace(old, new)
+
+          old2 = """         con_low=?, con_high=?, falsifier=?, note=? WHERE id=?`"""
+          new2 = """         con_low=?, con_high=?, falsifier=?, note=?, pack=? WHERE id=?`"""
+          assert s.count(old2) == 1, 'update statement not found'
+          s = s.replace(old2, new2)
+
+          # 2. връщаме пакета заедно с резултата
+          old3 = """        return json({ run, atoms, silence: gaps });"""
+          new3 = """        let pack = [];
+                try { pack = JSON.parse(run.pack || '[]'); } catch (e) { pack = []; }
+                const cited = new Set();
+                for (const a of atoms) for (const s of a.sources) cited.add(s.url);
+                const reviewed = pack.map((r) => ({ ...r, cited: cited.has(r.url) }));
+                return json({ run, atoms, silence: gaps, reviewed });"""
+          assert s.count(old3) == 1, 'return line not found'
+          s = s.replace(old3, new3.replace('\n        ', '\n        '))
+
+          open(p, 'w', encoding='utf-8').write(s)
+          print('worker patched')
+          PYEOF
+
+      - name: Patch frontend
+        run: |
+          python3 - <<'PYEOF'
+          p = 'index.html'
+          h = open(p, encoding='utf-8').read()
+
+          anchor = "  if(r.falsifier) h+='<section><h2>Какво би го оборило</h2>"
+          assert h.count(anchor) == 1, 'falsifier anchor not found'
+
+          block = """  if(d.reviewed && d.reviewed.length){
+            const used=d.reviewed.filter(x=>x.cited).length;
+            h+='<section><h2>Прегледани записи · '+used+' от '+d.reviewed.length+' използвани</h2>';
+            if(!used) h+='<p style="color:var(--rust);font-size:15px">Нищо от намереното не се отнася пряко към твърдението. Широкият интервал по-горе идва от липса на данни, не от противоречие.</p>';
+            h+='<ul class="src">';
+            for(const x of d.reviewed){
+              h+='<li'+(x.cited?'':' class="ghost"')+'><a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.ref)+'</a></li>';
+            }
+            h+='</ul></section>';
+          }
+
+          """
+          h = h.replace(anchor, block + anchor)
+
+          # зачеркнатите тук значат "намерено, но неизползвано", не "непроверимо"
+          old_css = "ul.src li.ghost::after{content:\" — без проверима референция\";"
+          new_css = "ul.src li.ghost::after{content:\" — намерено, но неизползвано\";"
+          print('css note replaced:', h.count(old_css))
+          h = h.replace(old_css, new_css)
+
+          open(p, 'w', encoding='utf-8').write(h)
+          print('frontend patched')
+          PYEOF
+
+      - name: Checks
+        run: |
+          cp src/index.js /tmp/check.mjs
+          node --check /tmp/check.mjs
+          echo "pack column used: $(grep -c 'pack=?' src/index.js)"
+          echo "reviewed returned: $(grep -c 'reviewed' src/index.js)"
+          echo "frontend section:  $(grep -c 'Прегледани записи' index.html)"
+
+      - name: Commit
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@emillion-lab"
+          git add src/index.js index.html
+          git commit -m "show every retrieved record and mark which were used, so an empty search cannot look like a judgement" || true
+          git push || true
