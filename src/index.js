@@ -1,184 +1,218 @@
 /**
- * SOMBRA · одитор на твърдения
- * Cloudflare Worker + D1
+ * SOMBRA · одитор на твърдения — безплатна версия
  *
- * Secrets:  ANTHROPIC_API_KEY, ADMIN_TOKEN
- * Bindings: DB (D1)
+ * Източниците идват от реални каталози (Crossref, OpenAlex, Wikipedia).
+ * Моделът вижда само номерирани записи и връща номера.
+ * Кодът приема само номера от списъка — измислен източник е невъзможен.
+ *
+ * Bindings: DB (D1), AI (Workers AI)
+ * Secrets:  ADMIN_TOKEN
  */
 
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+const UA = 'SombraAudit/1.0 (https://github.com/emillion-lab/SOMBRA)';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 };
 
-const json = (obj, status = 200) =>
-  new Response(JSON.stringify(obj), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS },
-  });
-
+const json = (o, s = 200) =>
+  new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS } });
 const uid = (p) => p + '_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
 const now = () => new Date().toISOString();
 
-/* ─────────────────────────── промптове ─────────────────────────── */
+/* ─────────────── модел: само език, никога факти ─────────────── */
 
-const RULES = `
-ПРАВИЛА (задължителни):
-1. Използвай уеб търсене. Никога не измисляй източник, ръкопис, сигнатура, находка или изследване.
-   Ако не можеш да посочиш проверима референция, задай "resolvable": false. Това е позволен и очакван изход.
-2. За всеки източник преценявай дали е САМОСТОЯТЕЛНО свидетелство ("independent": true) или преразказва
-   друг източник ("independent": false + "derives_from"). Двайсет преразказа на един извор са едно свидетелство.
-3. Разграничавай "няма запазено доказателство" от "има доказателство за обратното". Това са различни неща.
-4. Увереността е интервал. "low" не под 2, "high" не над 95. Ако доказателствата са оскъдни, интервалът е широк.
-5. За всеки ред в "silence" дай "prior" — груба оценка (0..1) какъв дял от такива документи изобщо оцелява
-   за съответния период и регион. Ако не знаеш, 0.5 и "cause":"неизвестно".
-Върни САМО валиден JSON, без Markdown, без предговор и без текст след него.`;
-
-const SHAPE = `{
- "atoms":[{"claim":"кратко проверимо твърдение","status":"supported|disputed|unverifiable","note":"едно изречение",
-   "sources":[{"ref":"автор/издание/сигнатура","url":"https://... или празно","kind":"първичен|вторичен",
-               "resolvable":true,"independent":true,"derives_from":""}]}],
- "silence":[{"expected":"какво би трябвало да е оцеляло","cause":"унищожено|неизследвано|никога не е съществувало|неизвестно","prior":0.5}],
- "falsifier":"конкретно откритие, което би оборило твърдението",
- "confidence":{"low":0,"high":0,"note":"защо интервалът е толкова широк"}
-}`;
-
-const proPrompt = (t) =>
-`Ти си архивен одитор. Работиш на български.
-Търси НАЙ-СИЛНИТЕ реални доказателства В ПОДКРЕПА на твърдението. Не разкрасявай: ако доказателства няма, кажи го.
-${RULES}
-Формат: ${SHAPE}
-
-ТВЪРДЕНИЕ: ${t}`;
-
-const conPrompt = (t) =>
-`Ти си архивен одитор. Работиш на български.
-Търси НАЙ-СИЛНИТЕ реални доказателства СРЕЩУ твърдението — опровержения, конкурентни обяснения, известни фалшификати,
-хронологични несъвместимости. "confidence" тук изразява правдоподобността на ОТРИЧАНЕТО на твърдението.
-${RULES}
-Формат: ${SHAPE}
-
-ТВЪРДЕНИЕ: ${t}`;
-
-/* ─────────────────────────── Anthropic ─────────────────────────── */
-
-async function ask(env, prompt) {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
-    }),
+async function llm(env, system, user) {
+  const r = await env.AI.run(MODEL, {
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    max_tokens: 1600,
+    temperature: 0.1,
   });
-
-  if (!r.ok) throw new Error('Anthropic ' + r.status + ': ' + (await r.text()).slice(0, 300));
-
-  const data = await r.json();
-  if (data.stop_reason === 'max_tokens') throw new Error('Отговорът е прерязан от лимита на токените.');
-
-  const text = (data.content || [])
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-
-  const clean = text.replace(/```json|```/g, '').trim();
-  const a = clean.indexOf('{'), b = clean.lastIndexOf('}');
-  if (a < 0 || b <= a) throw new Error('Отговорът не съдържа JSON.');
-  return JSON.parse(clean.slice(a, b + 1));
+  const t = String(r.response || '').replace(/```json|```/g, '').trim();
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new Error('Моделът не върна JSON.');
+  return JSON.parse(t.slice(a, b + 1));
 }
 
-/* ───────────────── обединяване на двата паса ─────────────────
-   Пасът "срещу" оценява отричането, затова се обръща: 100-high .. 100-low.
-   Взима се ОБЕДИНЕНИЕТО на двата интервала — несъгласието разширява
-   несигурността и никога не я стеснява.                        */
+/* Твърдението на български → английски заявки за каталозите. */
+async function makeQueries(env, claim) {
+  const out = await llm(
+    env,
+    'You turn a claim into literature search queries. Answer ONLY with JSON, no prose.',
+    `Claim (may be in Bulgarian): "${claim}"
 
-function merge(pro, con) {
-  const cl = (v, d) => Math.max(0, Math.min(100, Number.isFinite(+v) ? +v : d));
-  const pl = cl(pro?.confidence?.low, 2),  ph = cl(pro?.confidence?.high, 95);
-  const cl_ = cl(con?.confidence?.low, 2), ch = cl(con?.confidence?.high, 95);
-  const invLow = 100 - ch, invHigh = 100 - cl_;
-  return {
-    low:  Math.max(2,  Math.min(pl, invLow)),
-    high: Math.min(95, Math.max(ph, invHigh)),
-    pro:  { low: pl, high: ph },
-    con:  { low: cl_, high: ch },
-  };
+Produce 4 short English search queries for academic catalogues. Two should look for evidence
+supporting the claim, two for evidence against it or for competing explanations.
+Use scholarly vocabulary, 3-7 words each, no quotes inside.
+
+JSON: {"queries":["...","...","...","..."]}`
+  );
+  const q = (out.queries || []).map((s) => String(s).slice(0, 120)).filter(Boolean);
+  return q.length ? q.slice(0, 4) : [claim.slice(0, 100)];
 }
 
-/* ─────────────────────────── запис на пас ─────────────────────────── */
+/* ─────────────── извличане от безплатни каталози ─────────────── */
 
-async function persist(db, runId, side, res) {
-  for (const a of (res.atoms || []).slice(0, 8)) {
+async function crossref(q) {
+  const u = `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(q)}&rows=4&select=DOI,title,author,issued,container-title`;
+  const r = await fetch(u, { headers: { 'User-Agent': UA } });
+  if (!r.ok) return [];
+  const d = await r.json();
+  return (d.message?.items || []).map((it) => ({
+    ref: [
+      (it.author || []).slice(0, 2).map((a) => a.family).filter(Boolean).join(', '),
+      (it.title || [])[0],
+      (it['container-title'] || [])[0],
+      it.issued?.['date-parts']?.[0]?.[0],
+    ].filter(Boolean).join(' · ').slice(0, 280),
+    url: 'https://doi.org/' + it.DOI,
+    kind: 'вторичен',
+  }));
+}
+
+async function openalex(q) {
+  const u = `https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=4&mailto=sombra@emillion-lab`;
+  const r = await fetch(u, { headers: { 'User-Agent': UA } });
+  if (!r.ok) return [];
+  const d = await r.json();
+  return (d.results || []).map((w) => ({
+    ref: [
+      (w.authorships || []).slice(0, 2).map((a) => a.author?.display_name).filter(Boolean).join(', '),
+      w.title,
+      w.primary_location?.source?.display_name,
+      w.publication_year,
+    ].filter(Boolean).join(' · ').slice(0, 280),
+    url: w.doi || w.id,
+    kind: 'вторичен',
+  }));
+}
+
+async function wiki(q, lang) {
+  const u = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=3&format=json&origin=*`;
+  const r = await fetch(u, { headers: { 'User-Agent': UA } });
+  if (!r.ok) return [];
+  const d = await r.json();
+  return (d.query?.search || []).map((s) => ({
+    ref: 'Уикипедия (' + lang + '): ' + s.title,
+    url: `https://${lang}.wikipedia.org/wiki/` + encodeURIComponent(s.title.replace(/ /g, '_')),
+    kind: 'третичен',
+  }));
+}
+
+async function gather(queries, claim) {
+  const jobs = [];
+  for (const q of queries) { jobs.push(crossref(q)); jobs.push(openalex(q)); }
+  jobs.push(wiki(claim.slice(0, 100), 'bg'));
+  jobs.push(wiki(queries[0] || claim.slice(0, 100), 'en'));
+
+  const all = (await Promise.all(jobs.map((p) => p.catch(() => [])))).flat();
+
+  const seen = new Set(), out = [];
+  for (const s of all) {
+    const key = (s.url || s.ref).toLowerCase();
+    if (!s.url || !s.ref || seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+    if (out.length >= 24) break;
+  }
+  return out;
+}
+
+/* ─────────────── преценка върху извлеченото ─────────────── */
+
+async function judge(env, claim, pack) {
+  const list = pack.map((s, i) => `[${i + 1}] ${s.ref}`).join('\n');
+
+  const out = await llm(
+    env,
+    'You audit claims against a fixed list of retrieved records. Answer ONLY with JSON. Write all prose in Bulgarian.',
+    `CLAIM: "${claim}"
+
+RETRIEVED RECORDS (this is the ONLY evidence you may cite; refer to them by number):
+${list || '(нищо не е намерено)'}
+
+Rules:
+- Never invent a record. Only use numbers from the list above.
+- If a record does not actually address the claim, do not cite it.
+- If the list contains nothing relevant, say so and keep the interval very wide.
+- "supported" only if a listed record really addresses and supports the atom.
+- Distinguish "no surviving evidence" from "evidence of the opposite".
+- low >= 2, high <= 95. Sparse evidence means a wide interval.
+- Prose fields in Bulgarian. Maximum 4 atoms, 3 silence rows.
+
+JSON:
+{"atoms":[{"claim":"...","status":"supported|disputed|unverifiable","note":"...","cite":[1,2]}],
+ "silence":[{"expected":"...","cause":"унищожено|неизследвано|никога не е съществувало|неизвестно","prior":0.5}],
+ "falsifier":"...",
+ "confidence":{"low":10,"high":60,"note":"..."}}`
+  );
+  return out;
+}
+
+/* ─────────────── запис ─────────────── */
+
+async function persist(db, runId, res, pack) {
+  for (const a of (res.atoms || []).slice(0, 6)) {
     const status = ['supported', 'disputed', 'unverifiable'].includes(a.status) ? a.status : 'unverifiable';
     const ins = await db
       .prepare('INSERT INTO atoms (run_id,side,claim,status,note) VALUES (?,?,?,?,?)')
-      .bind(runId, side, String(a.claim || '').slice(0, 500), status, String(a.note || '').slice(0, 500))
+      .bind(runId, 'pro', String(a.claim || '').slice(0, 500), status, String(a.note || '').slice(0, 500))
       .run();
     const atomId = ins.meta.last_row_id;
 
-    for (const s of (a.sources || []).slice(0, 10)) {
-      const ok = s.resolvable === true && !!s.url;
+    // само номера от извлечения списък; всичко останало се хвърля
+    const cites = [...new Set((a.cite || []).map((n) => parseInt(n, 10)))].filter((n) => n >= 1 && n <= pack.length);
+    for (const n of cites.slice(0, 6)) {
+      const s = pack[n - 1];
       await db
-        .prepare(
-          'INSERT INTO sources (atom_id,ref,url,kind,resolvable,independent,derives_from) VALUES (?,?,?,?,?,?,?)'
-        )
-        .bind(
-          atomId,
-          String(s.ref || '').slice(0, 300),
-          ok ? String(s.url).slice(0, 500) : '',
-          String(s.kind || '').slice(0, 40),
-          ok ? 1 : 0,
-          s.independent === false ? 0 : 1,
-          String(s.derives_from || '').slice(0, 300)
-        )
+        .prepare('INSERT INTO sources (atom_id,ref,url,kind,resolvable,independent,derives_from) VALUES (?,?,?,?,1,?,?)')
+        .bind(atomId, s.ref, s.url, s.kind, s.kind === 'третичен' ? 0 : 1, s.kind === 'третичен' ? 'вторична литература' : '')
         .run();
     }
   }
 
-  if (side === 'pro') {
-    for (const g of (res.silence || []).slice(0, 6)) {
-      await db
-        .prepare('INSERT INTO silence (run_id,expected,cause,prior) VALUES (?,?,?,?)')
-        .bind(runId, String(g.expected || '').slice(0, 400), String(g.cause || 'неизвестно'), Number(g.prior) || 0.5)
-        .run();
-    }
+  for (const g of (res.silence || []).slice(0, 5)) {
+    await db
+      .prepare('INSERT INTO silence (run_id,expected,cause,prior) VALUES (?,?,?,?)')
+      .bind(runId, String(g.expected || '').slice(0, 400), String(g.cause || 'неизвестно'), Number(g.prior) || 0.5)
+      .run();
   }
 }
 
-/* ─────────────────────────── изпълнение ─────────────────────────── */
-
-async function execute(env, runId, claimText) {
+async function execute(env, runId, claim) {
   const db = env.DB;
   try {
     await db.prepare("UPDATE runs SET status='running' WHERE id=?").bind(runId).run();
 
-    // двата паса вървят паралелно и не се виждат един друг
-    const [pro, con] = await Promise.all([ask(env, proPrompt(claimText)), ask(env, conPrompt(claimText))]);
+    const queries = await makeQueries(env, claim);
+    const pack = await gather(queries, claim);
+    const res = await judge(env, claim, pack);
 
-    const m = merge(pro, con);
-    await persist(db, runId, 'pro', pro);
-    await persist(db, runId, 'contra', con);
+    const cl = (v, d) => Math.max(0, Math.min(100, Number.isFinite(+v) ? +v : d));
+    let low = Math.max(2, cl(res?.confidence?.low, 2));
+    let high = Math.min(95, cl(res?.confidence?.high, 95));
+    if (high < low) [low, high] = [high, low];
+
+    // нищо намерено => интервалът не може да е тесен
+    if (!pack.length) { low = Math.min(low, 5); high = Math.max(high, 90); }
+
+    await persist(db, runId, res, pack);
+
+    const note =
+      String(res?.confidence?.note || '').slice(0, 700) +
+      ` · Прегледани ${pack.length} записа от Crossref, OpenAlex и Уикипедия.`;
 
     await db
       .prepare(
-        `UPDATE runs SET status='done', finished_at=?, low=?, high=?,
-         pro_low=?, pro_high=?, con_low=?, con_high=?, falsifier=?, note=? WHERE id=?`
+        `UPDATE runs SET status='done', finished_at=?, low=?, high=?, pro_low=?, pro_high=?,
+         con_low=?, con_high=?, falsifier=?, note=? WHERE id=?`
       )
-      .bind(
-        now(), m.low, m.high, m.pro.low, m.pro.high, m.con.low, m.con.high,
-        String(pro.falsifier || con.falsifier || '').slice(0, 800),
-        String(pro?.confidence?.note || '').slice(0, 800),
-        runId
-      )
+      .bind(now(), low, high, low, high, 100 - high, 100 - low, String(res.falsifier || '').slice(0, 800), note, runId)
       .run();
   } catch (e) {
     await db
@@ -188,13 +222,12 @@ async function execute(env, runId, claimText) {
   }
 }
 
-/* ─────────────────────────── калибрация ─────────────────────────── */
+/* ─────────────── калибрация ─────────────── */
 
 async function calibration(db) {
   const { results } = await db
     .prepare(
-      `SELECT c.resolution, r.low, r.high
-       FROM claims c JOIN runs r ON r.claim_id = c.id
+      `SELECT c.resolution, r.low, r.high FROM claims c JOIN runs r ON r.claim_id=c.id
        WHERE c.resolution IN ('true','false') AND r.status='done'
        GROUP BY c.id HAVING r.started_at = MAX(r.started_at)`
     )
@@ -202,53 +235,44 @@ async function calibration(db) {
 
   if (!results.length) return { n: 0, brier: null, bias: null, note: 'Още няма разрешени твърдения.' };
 
-  let sum = 0, biasSum = 0;
+  let sum = 0, bs = 0;
   for (const r of results) {
-    const p = (r.low + r.high) / 200;      // среден залог 0..1
+    const p = (r.low + r.high) / 200;
     const o = r.resolution === 'true' ? 1 : 0;
     sum += (p - o) ** 2;
-    biasSum += p - o;
+    bs += p - o;
   }
-  const brier = sum / results.length;
-  const bias = biasSum / results.length;
+  const bias = bs / results.length;
   return {
     n: results.length,
-    brier: +brier.toFixed(4),
+    brier: +(sum / results.length).toFixed(4),
     bias: +bias.toFixed(4),
-    note:
-      bias > 0.1 ? 'Инструментът системно надценява.'
-      : bias < -0.1 ? 'Инструментът системно подценява.'
-      : 'Без изразен системен наклон.',
+    note: bias > 0.1 ? 'Инструментът системно надценява.' : bias < -0.1 ? 'Инструментът системно подценява.' : 'Без изразен системен наклон.',
   };
 }
 
-/* ─────────────────────────── рутер ─────────────────────────── */
+/* ─────────────── рутер ─────────────── */
 
 export default {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
-    const url = new URL(req.url);
-    const p = url.pathname;
+    const p = new URL(req.url).pathname;
     const db = env.DB;
     const authed = req.headers.get('Authorization') === 'Bearer ' + env.ADMIN_TOKEN;
 
     try {
-      /* нов одит */
       if (p === '/api/audit' && req.method === 'POST') {
         if (!authed) return json({ error: 'Липсва валиден токен.' }, 401);
         const body = await req.json();
         const text = String(body.text || '').trim();
         if (text.length < 8) return json({ error: 'Твърдението е твърде кратко.' }, 400);
 
-        let claimId = body.claim_id;
-        if (!claimId) {
-          claimId = uid('clm');
-          await db
-            .prepare('INSERT INTO claims (id,text,domain,created_at) VALUES (?,?,?,?)')
-            .bind(claimId, text.slice(0, 2000), String(body.domain || '').slice(0, 80), now())
-            .run();
-        }
+        const claimId = uid('clm');
+        await db
+          .prepare('INSERT INTO claims (id,text,domain,created_at) VALUES (?,?,?,?)')
+          .bind(claimId, text.slice(0, 2000), '', now())
+          .run();
 
         const runId = uid('run');
         await db
@@ -260,7 +284,6 @@ export default {
         return json({ claim_id: claimId, run_id: runId, status: 'queued' });
       }
 
-      /* състояние на пускане */
       if (p.startsWith('/api/run/') && req.method === 'GET') {
         const id = p.split('/')[3];
         const run = await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first();
@@ -275,21 +298,6 @@ export default {
         return json({ run, atoms, silence: gaps });
       }
 
-      /* история на едно твърдение */
-      if (p.startsWith('/api/claim/') && req.method === 'GET') {
-        const id = p.split('/')[3];
-        const claim = await db.prepare('SELECT * FROM claims WHERE id=?').bind(id).first();
-        if (!claim) return json({ error: 'Няма такова твърдение.' }, 404);
-        const runs = (
-          await db
-            .prepare('SELECT id,status,started_at,low,high,pro_low,pro_high,con_low,con_high FROM runs WHERE claim_id=? ORDER BY started_at DESC')
-            .bind(id)
-            .all()
-        ).results;
-        return json({ claim, runs });
-      }
-
-      /* списък */
       if (p === '/api/claims' && req.method === 'GET') {
         const { results } = await db
           .prepare('SELECT id,text,resolution,created_at FROM claims ORDER BY created_at DESC LIMIT 100')
@@ -297,7 +305,6 @@ export default {
         return json({ claims: results });
       }
 
-      /* разрешаване — храни калибрацията */
       if (p === '/api/resolve' && req.method === 'POST') {
         if (!authed) return json({ error: 'Липсва валиден токен.' }, 401);
         const b = await req.json();
