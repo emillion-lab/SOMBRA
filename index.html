@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SOMBRA · одитор на твърдения</title>
+<style>
+:root{--ink:#0a0c10;--vellum:#12161d;--rule:#242b35;--text:#cbd2dc;--dim:#7c8797;
+--gold:#d4a24c;--rust:#b8564d;--slate:#5c7a99}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--text);font-family:Georgia,'Times New Roman',serif;
+font-size:16px;line-height:1.6;padding:24px 16px 80px}
+.wrap{max-width:900px;margin:0 auto}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+header{border-bottom:1px solid var(--rule);padding-bottom:18px;margin-bottom:26px}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.18em;
+text-transform:uppercase;color:var(--gold);margin:0 0 8px}
+h1{font-size:29px;font-weight:400;margin:0 0 8px}
+header p{margin:0;color:var(--dim);font-size:15px;max-width:62ch}
+label{display:block;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.14em;
+text-transform:uppercase;color:var(--dim);margin:18px 0 7px}
+input,textarea{width:100%;background:var(--vellum);border:1px solid var(--rule);border-radius:2px;
+color:var(--text);padding:12px;font-family:Georgia,serif;font-size:16px}
+input{font-family:ui-monospace,Menlo,monospace;font-size:13px}
+textarea{min-height:88px;resize:vertical}
+input:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:transparent}
+button{background:transparent;border:1px solid var(--gold);color:var(--gold);font-family:ui-monospace,Menlo,monospace;
+font-size:12px;letter-spacing:.12em;text-transform:uppercase;padding:11px 20px;border-radius:2px;cursor:pointer}
+button:hover:not(:disabled){background:var(--gold);color:var(--ink)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+button.ghost{border-color:var(--rule);color:var(--dim);padding:7px 12px;font-size:11px}
+button.ghost:hover{background:var(--rule);color:var(--text)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
+.status{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--slate);margin-top:18px;min-height:20px}
+.dot{animation:bl 1.2s steps(2,start) infinite}@keyframes bl{to{visibility:hidden}}
+@media(prefers-reduced-motion:reduce){.dot{animation:none}}
+.error{border-left:2px solid var(--rust);background:var(--vellum);padding:12px 15px;margin-top:16px}
+.error strong{display:block;color:var(--rust);font-family:ui-monospace,monospace;font-size:11px;
+letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px}
+section{margin-top:40px}
+h2{font-family:ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+color:var(--dim);font-weight:400;border-bottom:1px solid var(--rule);padding-bottom:8px;margin:0 0 18px}
+.readout{font-family:ui-monospace,Menlo,monospace;font-size:21px;color:var(--gold);margin:0 0 6px}
+.readout small{color:var(--dim);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.track{position:relative;height:44px;border:1px solid var(--rule);background:var(--vellum);border-radius:2px;overflow:hidden}
+.unknown{position:absolute;top:0;bottom:0;
+background-image:repeating-linear-gradient(135deg,transparent 0 5px,rgba(92,122,153,.28) 5px 6px)}
+.band{position:absolute;top:0;bottom:0;background:rgba(212,162,76,.22);
+border-left:1px solid var(--gold);border-right:1px solid var(--gold)}
+.scale{display:flex;justify-content:space-between;font-family:ui-monospace,Menlo,monospace;
+font-size:10px;color:var(--dim);margin-top:6px}
+.passes{display:flex;gap:22px;margin-top:12px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--dim)}
+.atom{border-left:2px solid var(--rule);padding-left:16px;margin-bottom:22px}
+.atom.supported{border-left-color:var(--gold)}
+.atom.disputed{border-left-color:var(--slate)}
+.atom.unverifiable{border-left-color:var(--rust)}
+.verdict{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.atom.supported .verdict{color:var(--gold)}.atom.disputed .verdict{color:var(--slate)}
+.atom.unverifiable .verdict{color:var(--rust)}
+.atom p.claim{margin:5px 0 9px;font-size:17px}
+ul.src{list-style:none;margin:0;padding:0}
+ul.src li{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--dim);
+padding:5px 0;border-top:1px dotted var(--rule)}
+ul.src li a{color:var(--slate)}
+ul.src li.ghost{color:var(--rust);text-decoration:line-through}
+ul.src li.ghost::after{content:" — без проверима референция";text-decoration:none;font-style:italic;display:inline-block}
+.derived{color:var(--slate);font-style:italic}
+.silence{border-top:1px solid var(--rule)}
+.silence .r{display:grid;grid-template-columns:2fr 1fr;border-bottom:1px solid var(--rule)}
+.silence .r>div{padding:11px 13px}
+.silence .r>div:first-child{border-right:1px solid var(--rule);background:rgba(92,122,153,.05)}
+.k{display:block;font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.12em;
+text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+@media(max-width:600px){.silence .r{grid-template-columns:1fr}.silence .r>div:first-child{border-right:none}}
+.falsifier{border:1px solid var(--rule);border-left:2px solid var(--slate);background:var(--vellum);padding:15px 17px}
+.claimrow{border-bottom:1px solid var(--rule);padding:12px 0;display:flex;gap:12px;
+justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.claimrow .t{flex:1;min-width:240px}
+.pill{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+border:1px solid var(--rule);padding:2px 7px;border-radius:2px;color:var(--dim)}
+.pill.t{color:var(--gold);border-color:var(--gold)}.pill.f{color:var(--rust);border-color:var(--rust)}
+.calib{display:flex;gap:34px;flex-wrap:wrap;font-family:ui-monospace,Menlo,monospace}
+.calib div span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.calib div strong{font-size:24px;color:var(--gold);font-weight:400}
+footer{margin-top:56px;border-top:1px solid var(--rule);padding-top:15px;color:var(--dim);font-size:13px;font-style:italic}
+details{margin-top:14px}summary{cursor:pointer;color:var(--dim);font-family:ui-monospace,monospace;font-size:11px;
+letter-spacing:.1em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Sombra · регистър на твърдения</p>
+  <h1>Какво липсва в архива?</h1>
+  <p>Всяко твърдение се проверява два пъти — веднъж за, веднъж срещу, с реално търсене. Несъгласието между двата паса разширява несигурността. Резултатите се записват, за да може същото твърдение да се пусне пак и да се види какво се е променило.</p>
+</header>
+
+<details id="cfg">
+  <summary>Връзка</summary>
+  <label for="ep">Адрес на Worker</label>
+  <input id="ep" placeholder="https://sombra.mihov-emil.workers.dev">
+  <label for="tok">Администраторски токен</label>
+  <input id="tok" type="password" placeholder="fta_…">
+  <div class="row"><button class="ghost" onclick="saveCfg()">Запази</button>
+  <span class="mono" style="font-size:11px;color:var(--dim)">Токенът стои само в тази сесия.</span></div>
+</details>
+
+<label for="hyp">Твърдение за одит</label>
+<textarea id="hyp" placeholder="Формулирай така, че да може да бъде опровергано."></textarea>
+<div class="row">
+  <button id="go" onclick="audit()">Одитирай</button>
+  <button class="ghost" onclick="loadClaims()">Регистър</button>
+  <button class="ghost" onclick="loadCalib()">Калибрация</button>
+</div>
+
+<div class="status" id="status"></div>
+<div id="out"></div>
+
+<footer>Интервалът не достига 100%. Приемането на твърдение остава решение на четящия.</footer>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const S={supported:'Подкрепено',disputed:'Оспорвано',unverifiable:'Непроверимо'};
+
+$('ep').value = localStorage.getItem('sombra_ep') || 'https://sombra.mihov-emil.workers.dev';
+$('tok').value = sessionStorage.getItem('sombra_tok') || '';
+if(!$('tok').value) $('cfg').open = true;
+
+function saveCfg(){
+  localStorage.setItem('sombra_ep',$('ep').value.trim().replace(/\/$/,''));
+  sessionStorage.setItem('sombra_tok',$('tok').value.trim());
+  $('cfg').open=false; setStatus('Връзката е запазена.');
+}
+const ep=()=>$('ep').value.trim().replace(/\/$/,'');
+const tok=()=>$('tok').value.trim();
+const setStatus=(t,busy)=>$('status').innerHTML = busy ? t+'<span class="dot">…</span>' : esc(t);
+const fail=m=>$('out').innerHTML='<div class="error"><strong>Не се получи</strong>'+esc(m)+'</div>';
+
+async function api(path,opts={}){
+  const r=await fetch(ep()+path,{...opts,headers:{'Content-Type':'application/json',
+    'Authorization':'Bearer '+tok(),...(opts.headers||{})}});
+  const d=await r.json().catch(()=>({error:'Отговорът не е JSON.'}));
+  if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
+
+async function audit(){
+  const text=$('hyp').value.trim();
+  if(!ep()||!tok()){ $('cfg').open=true; setStatus('Първо попълни адреса и токена.'); return; }
+  if(text.length<8){ setStatus('Твърдението е твърде кратко.'); return; }
+  $('go').disabled=true; $('out').innerHTML=''; setStatus('Пускам двата паса',1);
+  try{
+    const {run_id}=await api('/api/audit',{method:'POST',body:JSON.stringify({text})});
+    await poll(run_id);
+  }catch(e){ setStatus(''); fail(e.message); }
+  finally{ $('go').disabled=false; }
+}
+
+async function poll(runId){
+  for(let i=0;i<90;i++){
+    await new Promise(r=>setTimeout(r,2500));
+    const d=await api('/api/run/'+runId);
+    if(d.run.status==='done'){ setStatus('Готово. Проверявай връзките сам.'); return render(d); }
+    if(d.run.status==='error'){ setStatus(''); return fail(d.run.error||'Одитът прекъсна.'); }
+    setStatus('Търся източници · '+(i*2.5|0)+'с',1);
+  }
+  setStatus(''); fail('Одитът се проточи. Пусни го пак.');
+}
+
+function render(d){
+  const r=d.run, lo=r.low||0, hi=r.high||0;
+  let h='<section><h2>Интервал на увереност</h2>';
+  h+='<p class="readout">'+lo+' – '+hi+'% <small>правдоподобност</small></p>';
+  h+='<div class="track"><div class="unknown" style="left:0;width:'+lo+'%"></div>'+
+     '<div class="band" style="left:'+lo+'%;width:'+(hi-lo)+'%"></div>'+
+     '<div class="unknown" style="left:'+hi+'%;right:0"></div></div>';
+  h+='<div class="scale"><span>0 — изключено</span><span>100 — установено</span></div>';
+  h+='<div class="passes"><span>пас ЗА: '+r.pro_low+'–'+r.pro_high+'%</span>'+
+     '<span>пас СРЕЩУ, обърнат: '+(100-r.con_high)+'–'+(100-r.con_low)+'%</span></div>';
+  if(hi-lo>60) h+='<p style="color:var(--slate);font-size:15px">Широкият интервал е резултатът: двата паса стигат до несъвместими изводи.</p>';
+  if(r.note) h+='<p>'+esc(r.note)+'</p>';
+  h+='</section>';
+
+  for(const side of ['pro','contra']){
+    const as=(d.atoms||[]).filter(a=>a.side===side);
+    if(!as.length) continue;
+    h+='<section><h2>'+(side==='pro'?'Пас за':'Пас срещу')+'</h2>';
+    for(const a of as){
+      const st=['supported','disputed','unverifiable'].includes(a.status)?a.status:'unverifiable';
+      h+='<div class="atom '+st+'"><span class="verdict">'+S[st]+'</span>';
+      h+='<p class="claim">'+esc(a.claim)+'</p>';
+      if(a.note) h+='<p style="color:var(--dim);font-size:15px;margin:0 0 8px">'+esc(a.note)+'</p>';
+      if(a.sources&&a.sources.length){
+        h+='<ul class="src">';
+        for(const s of a.sources){
+          if(!s.resolvable){ h+='<li class="ghost">'+esc(s.ref)+'</li>'; continue; }
+          h+='<li><a href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.ref)+'</a> · '+esc(s.kind||'');
+          if(!s.independent) h+=' <span class="derived">производен'+(s.derives_from?' от '+esc(s.derives_from):'')+'</span>';
+          h+='</li>';
+        }
+        h+='</ul>';
+      }
+      h+='</div>';
+    }
+    h+='</section>';
+  }
+
+  if(d.silence&&d.silence.length){
+    h+='<section><h2>Карта на мълчанието</h2><div class="silence">';
+    for(const g of d.silence){
+      h+='<div class="r"><div><span class="k">Очаквано да оцелее</span>'+esc(g.expected)+'</div>'+
+         '<div><span class="k">Причина · оцеляемост</span><span class="mono" style="font-size:11.5px;color:var(--slate)">'+
+         esc(g.cause)+' · '+Math.round((g.prior||0)*100)+'%</span></div></div>';
+    }
+    h+='</div></section>';
+  }
+
+  if(r.falsifier) h+='<section><h2>Какво би го оборило</h2><div class="falsifier">'+esc(r.falsifier)+'</div></section>';
+  $('out').innerHTML=h;
+}
+
+async function loadClaims(){
+  setStatus('Чета регистъра',1);
+  try{
+    const {claims}=await api('/api/claims');
+    let h='<section><h2>Регистър</h2>';
+    if(!claims.length) h+='<p style="color:var(--dim)">Още няма записани твърдения.</p>';
+    for(const c of claims){
+      const p=c.resolution==='true'?'<span class="pill t">вярно</span>'
+        :c.resolution==='false'?'<span class="pill f">невярно</span>'
+        :c.resolution?'<span class="pill">неопределено</span>':'';
+      h+='<div class="claimrow"><div class="t">'+esc(c.text)+' '+p+
+         '<br><span class="mono" style="font-size:10.5px;color:var(--dim)">'+esc(c.id)+'</span></div>';
+      if(!c.resolution) h+='<div class="row" style="margin:0">'+
+        '<button class="ghost" onclick="resolve(\''+c.id+'\',\'true\')">вярно</button>'+
+        '<button class="ghost" onclick="resolve(\''+c.id+'\',\'false\')">невярно</button></div>';
+      h+='</div>';
+    }
+    $('out').innerHTML=h+'</section>'; setStatus('');
+  }catch(e){ setStatus(''); fail(e.message); }
+}
+
+async function resolve(id,res){
+  try{ await api('/api/resolve',{method:'POST',body:JSON.stringify({claim_id:id,resolution:res})});
+    setStatus('Записано. Това храни калибрацията.'); loadClaims();
+  }catch(e){ fail(e.message); }
+}
+
+async function loadCalib(){
+  setStatus('Смятам калибрацията',1);
+  try{
+    const c=await api('/api/calibration');
+    let h='<section><h2>Собствена калибрация</h2>';
+    if(!c.n){ h+='<p style="color:var(--dim)">'+esc(c.note)+' Маркирай изхода на твърдения от регистъра, за да се появи число тук.</p>'; }
+    else{
+      h+='<div class="calib"><div><span>Разрешени</span><strong>'+c.n+'</strong></div>'+
+         '<div><span>Brier score</span><strong>'+c.brier+'</strong></div>'+
+         '<div><span>Наклон</span><strong>'+(c.bias>0?'+':'')+c.bias+'</strong></div></div>';
+      h+='<p style="margin-top:14px">'+esc(c.note)+' Brier под 0.10 е добра калибрация, над 0.25 — лоша. Положителен наклон значи надценяване.</p>';
+    }
+    $('out').innerHTML=h+'</section>'; setStatus('');
+  }catch(e){ setStatus(''); fail(e.message); }
+}
+</script>
+</body>
+</html>
