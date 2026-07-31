@@ -102,9 +102,9 @@ letter-spacing:.1em;text-transform:uppercase}
   <label for="ep">Адрес на Worker</label>
   <input id="ep" placeholder="https://sombra.mihov-emil.workers.dev">
   <label for="tok">Администраторски токен</label>
-  <input id="tok" type="password" placeholder="fta_…">
+  <input id="tok" type="password" placeholder="som_…">
   <div class="row"><button class="ghost" onclick="saveCfg()">Запази</button>
-  <span class="mono" style="font-size:11px;color:var(--dim)">Токенът стои само в тази сесия.</span></div>
+  <span class="mono" style="font-size:11px;color:var(--dim)">Токенът се помни на това устройство.</span></div>
 </details>
 
 <label for="hyp">Твърдение за одит</label>
@@ -127,12 +127,12 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const S={supported:'Подкрепено',disputed:'Оспорвано',unverifiable:'Непроверимо'};
 
 $('ep').value = localStorage.getItem('sombra_ep') || 'https://sombra.mihov-emil.workers.dev';
-$('tok').value = sessionStorage.getItem('sombra_tok') || '';
+$('tok').value = localStorage.getItem('sombra_tok') || '';
 if(!$('tok').value) $('cfg').open = true;
 
 function saveCfg(){
   localStorage.setItem('sombra_ep',$('ep').value.trim().replace(/\/$/,''));
-  sessionStorage.setItem('sombra_tok',$('tok').value.trim());
+  localStorage.setItem('sombra_tok',$('tok').value.trim());
   $('cfg').open=false; setStatus('Връзката е запазена.');
 }
 const ep=()=>$('ep').value.trim().replace(/\/$/,'');
