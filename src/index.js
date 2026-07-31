@@ -42,29 +42,56 @@ function carve(text) {
   return null;
 }
 
+/* Workers AI has returned several shapes over time; accept all of them. */
+function textOf(r) {
+  if (r == null) return '';
+  if (typeof r === 'string') return r;
+  if (typeof r.response === 'string') return r.response;
+  if (r.response && typeof r.response === 'object') return JSON.stringify(r.response);
+  const c = Array.isArray(r.choices) ? r.choices[0] : null;
+  if (c) return (c.message && c.message.content) || c.text || '';
+  if (r.result && typeof r.result.response === 'string') return r.result.response;
+  if (typeof r.output_text === 'string') return r.output_text;
+  return '';
+}
+
+function shapeOf(r) {
+  try {
+    return 'keys=' + Object.keys(r || {}).join('|') +
+ ' head=' + JSON.stringify(r).slice(0, 180);
+  } catch (e) { return 'unserialisable reply'; }
+}
+
 async function llm(env, system, user) {
   let lastErr = 'no attempt';
   for (let attempt = 0; attempt < 3; attempt++) {
     const nudge = attempt === 0 ? '' :
       '\n\nYour previous reply could not be parsed. Output the JSON object and nothing else: ' +
       'no greeting, no explanation, no code fence. Start with { and end with }.';
+    const opts = {
+      messages: [
+        { role: 'system', content: system + ' Output raw JSON only.' },
+        { role: 'user', content: user + nudge },
+      ],
+      max_tokens: 1800,
+      temperature: attempt === 0 ? 0.1 : 0,
+    };
+    // Първият опит иска изричен JSON режим; ако моделът не го
+    // поддържа, следващите минават без него.
+    if (attempt === 0) opts.response_format = { type: 'json_object' };
+
     try {
-      const r = await env.AI.run(MODEL, {
-        messages: [
-{ role: 'system', content: system + ' Output raw JSON only.' },
-{ role: 'user', content: user + nudge },
-        ],
-        max_tokens: 1800,
-        temperature: attempt === 0 ? 0.1 : 0,
-      });
-      const body = carve(r.response);
-      if (!body) { lastErr = 'no JSON object in reply'; continue; }
+      const r = await env.AI.run(MODEL, opts);
+      const raw = textOf(r);
+      if (!raw) { lastErr = 'empty reply · ' + shapeOf(r); continue; }
+      const body = carve(raw);
+      if (!body) { lastErr = 'no JSON in: ' + raw.slice(0, 180); continue; }
       return JSON.parse(body);
     } catch (e) {
       lastErr = e.message;
     }
   }
-  throw new Error('Model did not return usable JSON after 3 attempts: ' + lastErr);
+  throw new Error('Model gave no usable JSON in 3 attempts. Last: ' + lastErr);
 }
 
 /* Claim (any language) → English catalogue queries. */
