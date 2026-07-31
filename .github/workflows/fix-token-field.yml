@@ -1,0 +1,55 @@
+name: Fix token field
+
+# Подсказката показваше fta_… (конвенция от друг проект) и токенът се
+# губеше при затваряне на браузъра. И двете са излишно триене.
+
+on:
+  push:
+    paths: ['.github/workflows/fix-token-field.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch index.html
+        run: |
+          python3 - <<'PYEOF'
+          h = open('index.html', encoding='utf-8').read()
+
+          reps = [
+            ('placeholder="fta_…"', 'placeholder="som_…"'),
+            ("sessionStorage.getItem('sombra_tok')", "localStorage.getItem('sombra_tok')"),
+            ("sessionStorage.setItem('sombra_tok',$('tok').value.trim());",
+             "localStorage.setItem('sombra_tok',$('tok').value.trim());"),
+            ('Токенът стои само в тази сесия.',
+             'Токенът се помни на това устройство.'),
+          ]
+
+          for old, new in reps:
+              n = h.count(old)
+              print(('%-55s' % old[:55]), '->', n, 'occurrence(s)')
+              assert n >= 1, 'not found: ' + old
+              h = h.replace(old, new)
+
+          open('index.html', 'w', encoding='utf-8').write(h)
+          print('done')
+          PYEOF
+
+      - name: Checks
+        run: |
+          echo "fta placeholder left: $(grep -c 'fta_' index.html || true)"
+          echo "sessionStorage left:  $(grep -c 'sessionStorage' index.html || true)"
+
+      - name: Commit
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@emillion-lab"
+          git add index.html
+          git commit -m "token field: correct hint, remembered on the device" || true
+          git push || true
