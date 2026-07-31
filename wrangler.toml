@@ -7,14 +7,11 @@ binding = "DB"
 database_name = "sombra"
 database_id = "5d2b95a0-a8c5-4419-9e23-6a677c89981c"
 
-# Базата "sombra" вече е създадена (регион EEUR) и схемата е пусната.
-# Остават само тайните:
-#   wrangler secret put ANTHROPIC_API_KEY
-#   wrangler secret put ADMIN_TOKEN          # например fta_ ... по твоя патърн
-#   wrangler deploy
-#
-# Проверка:
-#   curl -X POST https://sombra.<subdomain>.workers.dev/api/audit \
-#     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-#     -d '{"text":"Твърдението за проверка"}'
-#   curl https://sombra.<subdomain>.workers.dev/api/run/run_xxx
+[ai]
+binding = "AI"
+
+# Базата "sombra" вече е създадена (EEUR) и схемата е приложена.
+# Единствената тайна, която трябва да сложиш в Cloudflare:
+#   ADMIN_TOKEN
+# Няма външни API ключове. Workers AI и каталозите (Crossref, OpenAlex,
+# Wikipedia) не искат ключ.
