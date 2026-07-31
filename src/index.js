@@ -266,9 +266,10 @@ async function execute(env, runId, claim, lang) {
     await db
       .prepare(
         `UPDATE runs SET status='done', finished_at=?, low=?, high=?, pro_low=?, pro_high=?,
-         con_low=?, con_high=?, falsifier=?, note=? WHERE id=?`
+         con_low=?, con_high=?, falsifier=?, note=?, pack=? WHERE id=?`
       )
-      .bind(now(), low, high, low, high, 100 - high, 100 - low, String(res.falsifier || '').slice(0, 800), note, runId)
+      .bind(now(), low, high, low, high, 100 - high, 100 - low, String(res.falsifier || '').slice(0, 800), note,
+   JSON.stringify(pack).slice(0, 60000), runId)
       .run();
   } catch (e) {
     await db
@@ -352,7 +353,12 @@ export default {
         for (const a of atoms) {
           a.sources = (await db.prepare('SELECT * FROM sources WHERE atom_id=?').bind(a.id).all()).results;
         }
-        return json({ run, atoms, silence: gaps });
+        let pack = [];
+      try { pack = JSON.parse(run.pack || '[]'); } catch (e) { pack = []; }
+      const cited = new Set();
+      for (const a of atoms) for (const s of a.sources) cited.add(s.url);
+      const reviewed = pack.map((r) => ({ ...r, cited: cited.has(r.url) }));
+      return json({ run, atoms, silence: gaps, reviewed });
       }
 
       if (p === '/api/claims' && req.method === 'GET') {

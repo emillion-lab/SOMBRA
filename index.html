@@ -64,7 +64,7 @@ ul.src li{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--
 padding:5px 0;border-top:1px dotted var(--rule)}
 ul.src li a{color:var(--slate)}
 ul.src li.ghost{color:var(--rust);text-decoration:line-through}
-ul.src li.ghost::after{content:" — без проверима референция";text-decoration:none;font-style:italic;display:inline-block}
+ul.src li.ghost::after{content:" — намерено, но неизползвано";text-decoration:none;font-style:italic;display:inline-block}
 .derived{color:var(--slate);font-style:italic}
 .silence{border-top:1px solid var(--rule)}
 .silence .r{display:grid;grid-template-columns:2fr 1fr;border-bottom:1px solid var(--rule)}
@@ -218,6 +218,17 @@ function render(d){
     }
     h+='</div></section>';
   }
+
+  if(d.reviewed && d.reviewed.length){
+  const used=d.reviewed.filter(x=>x.cited).length;
+  h+='<section><h2>Прегледани записи · '+used+' от '+d.reviewed.length+' използвани</h2>';
+  if(!used) h+='<p style="color:var(--rust);font-size:15px">Нищо от намереното не се отнася пряко към твърдението. Широкият интервал по-горе идва от липса на данни, не от противоречие.</p>';
+  h+='<ul class="src">';
+  for(const x of d.reviewed){
+    h+='<li'+(x.cited?'':' class="ghost"')+'><a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.ref)+'</a></li>';
+  }
+  h+='</ul></section>';
+}
 
   if(r.falsifier) h+='<section><h2>Какво би го оборило</h2><div class="falsifier">'+esc(r.falsifier)+'</div></section>';
   $('out').innerHTML=h;
