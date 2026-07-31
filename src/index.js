@@ -24,19 +24,47 @@ const now = () => new Date().toISOString();
 
 /* ─────────────── the model does language, never facts ─────────────── */
 
+/* Extract the first balanced {...} object, ignoring braces inside strings. */
+function carve(text) {
+  const t = String(text || '').replace(/```json|```/g, '');
+  const start = t.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\') { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return t.slice(start, i + 1); }
+  }
+  return null;
+}
+
 async function llm(env, system, user) {
-  const r = await env.AI.run(MODEL, {
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-    max_tokens: 1600,
-    temperature: 0.1,
-  });
-  const t = String(r.response || '').replace(/```json|```/g, '').trim();
-  const a = t.indexOf('{'), b = t.lastIndexOf('}');
-  if (a < 0 || b <= a) throw new Error('Model did not return JSON.');
-  return JSON.parse(t.slice(a, b + 1));
+  let lastErr = 'no attempt';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const nudge = attempt === 0 ? '' :
+      '\n\nYour previous reply could not be parsed. Output the JSON object and nothing else: ' +
+      'no greeting, no explanation, no code fence. Start with { and end with }.';
+    try {
+      const r = await env.AI.run(MODEL, {
+        messages: [
+{ role: 'system', content: system + ' Output raw JSON only.' },
+{ role: 'user', content: user + nudge },
+        ],
+        max_tokens: 1800,
+        temperature: attempt === 0 ? 0.1 : 0,
+      });
+      const body = carve(r.response);
+      if (!body) { lastErr = 'no JSON object in reply'; continue; }
+      return JSON.parse(body);
+    } catch (e) {
+      lastErr = e.message;
+    }
+  }
+  throw new Error('Model did not return usable JSON after 3 attempts: ' + lastErr);
 }
 
 /* Claim (any language) → English catalogue queries. */
