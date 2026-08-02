@@ -6,7 +6,8 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "check": "cp src/index.js /tmp/check.mjs && node --check /tmp/check.mjs"
+    "check": "cp src/index.js /tmp/check.mjs && node --check /tmp/check.mjs",
+    "calibrate": "node scripts/run-calibration.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
