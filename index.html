@@ -84,6 +84,10 @@ border:1px solid var(--rule);padding:2px 7px;border-radius:2px;color:var(--dim)}
 .calib div span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .calib div strong{font-size:24px;color:var(--gold);font-weight:400}
 footer{margin-top:56px;border-top:1px solid var(--rule);padding-top:15px;color:var(--dim);font-size:13px;font-style:italic}
+html[lang=en] ul.src li.ghost::after{content:" — found, but not used"}
+.langbtn{position:absolute;top:0;right:0;padding:6px 10px;font-size:11px}
+header{position:relative}
+header .eyebrow,header h1{padding-right:52px}
 details{margin-top:14px}summary{cursor:pointer;color:var(--dim);font-family:ui-monospace,monospace;font-size:11px;
 letter-spacing:.1em;text-transform:uppercase}
 </style>
@@ -92,39 +96,99 @@ letter-spacing:.1em;text-transform:uppercase}
 <div class="wrap">
 
 <header>
-  <p class="eyebrow">Sombra · регистър на твърдения</p>
-  <h1>Какво липсва в архива?</h1>
-  <p>Всяко твърдение се проверява два пъти — веднъж за, веднъж срещу, с реално търсене. Несъгласието между двата паса разширява несигурността. Резултатите се записват, за да може същото твърдение да се пусне пак и да се види какво се е променило.</p>
+  <button class="ghost langbtn" id="langBtn" onclick="setLang(LANG==='bg'?'en':'bg')">EN</button>
+  <p class="eyebrow" data-i18n="eyebrow">Sombra · регистър на твърдения</p>
+  <h1 data-i18n="h1">Какво липсва в архива?</h1>
+  <p data-i18n="intro">Всяко твърдение се проверява два пъти — веднъж за, веднъж срещу, с реално търсене. Несъгласието между двата паса разширява несигурността. Резултатите се записват, за да може същото твърдение да се пусне пак и да се види какво се е променило.</p>
 </header>
 
 <details id="cfg">
-  <summary>Връзка</summary>
-  <label for="ep">Адрес на Worker</label>
+  <summary data-i18n="conn">Връзка</summary>
+  <label for="ep" data-i18n="epLabel">Адрес на Worker</label>
   <input id="ep" placeholder="https://sombra.mihov-emil.workers.dev">
-  <label for="tok">Администраторски токен</label>
+  <label for="tok" data-i18n="tokLabel">Администраторски токен</label>
   <input id="tok" type="password" placeholder="som_…">
-  <div class="row"><button class="ghost" onclick="saveCfg()">Запази</button>
-  <span class="mono" style="font-size:11px;color:var(--dim)">Токенът се помни на това устройство.</span></div>
+  <div class="row"><button class="ghost" onclick="saveCfg()" data-i18n="save">Запази</button>
+  <span class="mono" style="font-size:11px;color:var(--dim)" data-i18n="tokNote">Токенът се помни на това устройство.</span></div>
 </details>
 
-<label for="hyp">Твърдение за одит</label>
-<textarea id="hyp" placeholder="Формулирай така, че да може да бъде опровергано."></textarea>
+<label for="hyp" data-i18n="hypLabel">Твърдение за одит</label>
+<textarea id="hyp" data-i18n-ph="hypPh" placeholder="Формулирай така, че да може да бъде опровергано."></textarea>
 <div class="row">
-  <button id="go" onclick="audit()">Одитирай</button>
-  <button class="ghost" onclick="loadClaims()">Регистър</button>
-  <button class="ghost" onclick="loadCalib()">Калибрация</button>
+  <button id="go" onclick="audit()" data-i18n="auditBtn">Одитирай</button>
+  <button class="ghost" onclick="loadClaims()" data-i18n="regBtn">Регистър</button>
+  <button class="ghost" onclick="loadCalib()" data-i18n="calBtn">Калибрация</button>
 </div>
 
 <div class="status" id="status"></div>
 <div id="out"></div>
 
-<footer>Интервалът не достига 100%. Приемането на твърдение остава решение на четящия.</footer>
+<footer data-i18n="footer">Интервалът не достига 100%. Приемането на твърдение остава решение на четящия.</footer>
 </div>
 
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const S={supported:'Подкрепено',disputed:'Оспорвано',unverifiable:'Непроверимо'};
+const I18N={
+ bg:{title:'SOMBRA · одитор на твърдения',eyebrow:'Sombra · регистър на твърдения',h1:'Какво липсва в архива?',
+  intro:'Всяко твърдение се проверява два пъти — веднъж за, веднъж срещу, с реално търсене. Несъгласието между двата паса разширява несигурността. Резултатите се записват, за да може същото твърдение да се пусне пак и да се види какво се е променило.',
+  conn:'Връзка',epLabel:'Адрес на Worker',tokLabel:'Администраторски токен',save:'Запази',tokNote:'Токенът се помни на това устройство.',
+  hypLabel:'Твърдение за одит',hypPh:'Формулирай така, че да може да бъде опровергано.',auditBtn:'Одитирай',regBtn:'Регистър',calBtn:'Калибрация',
+  footer:'Интервалът не достига 100%. Приемането на твърдение остава решение на четящия.',
+  supported:'Подкрепено',disputed:'Оспорвано',unverifiable:'Непроверимо',
+  saved:'Връзката е запазена.',failed:'Не се получи',notJson:'Отговорът не е JSON.',
+  needCfg:'Първо попълни адреса и токена.',tooShort:'Твърдението е твърде кратко.',running:'Пускам двата паса',
+  doneCheck:'Готово. Проверявай връзките сам.',aborted:'Одитът прекъсна.',searching:s=>'Търся източници · '+s+'с',
+  tooLong:'Одитът се проточи. Пусни го пак.',interval:'Интервал на увереност',plaus:'правдоподобност',
+  s0:'0 — изключено',s100:'100 — установено',passFor:'пас ЗА',passAgainst:'пас СРЕЩУ, обърнат',
+  wide:'Широкият интервал е резултатът: двата паса стигат до несъвместими изводи.',
+  pro:'Пас за',contra:'Пас срещу',derived:'производен',from:' от ',silenceMap:'Карта на мълчанието',
+  expected:'Очаквано да оцелее',cause:'Причина · оцеляемост',reviewed:(u,n)=>'Прегледани записи · '+u+' от '+n+' използвани',
+  noneUsed:'Нищо от намереното не се отнася пряко към твърдението. Широкият интервал по-горе идва от липса на данни, не от противоречие.',
+  falsifier:'Какво би го оборило',readingReg:'Чета регистъра',register:'Регистър',noClaims:'Още няма записани твърдения.',
+  true:'вярно',false:'невярно',undet:'неопределено',recorded:'Записано. Това храни калибрацията.',
+  calcCal:'Смятам калибрацията',ownCal:'Собствена калибрация',calHint:' Маркирай изхода на твърдения от регистъра, за да се появи число тук.',
+  resolved:'Разрешени',slope:'Наклон',brierNote:' Brier под 0.10 е добра калибрация, над 0.25 — лоша. Положителен наклон значи надценяване.',other:'EN'},
+ en:{title:'SOMBRA · claim auditor',eyebrow:'Sombra · claim register',h1:'What is missing from the archive?',
+  intro:'Every claim is checked twice — once for, once against, with real searches. Disagreement between the two passes widens the uncertainty. Results are stored so the same claim can be run again later to see what has changed.',
+  conn:'Connection',epLabel:'Worker URL',tokLabel:'Admin token',save:'Save',tokNote:'The token is remembered on this device.',
+  hypLabel:'Claim to audit',hypPh:'Phrase it so that it could be proven wrong.',auditBtn:'Audit',regBtn:'Register',calBtn:'Calibration',
+  footer:"The interval never reaches 100%. Accepting a claim remains the reader's decision.",
+  supported:'Supported',disputed:'Disputed',unverifiable:'Unverifiable',
+  saved:'Connection saved.',failed:'Something went wrong',notJson:'The response is not JSON.',
+  needCfg:'Fill in the URL and token first.',tooShort:'The claim is too short.',running:'Running both passes',
+  doneCheck:'Done. Check the links yourself.',aborted:'The audit was interrupted.',searching:s=>'Searching sources · '+s+'s',
+  tooLong:'The audit took too long. Run it again.',interval:'Confidence interval',plaus:'plausibility',
+  s0:'0 — ruled out',s100:'100 — established',passFor:'pass FOR',passAgainst:'pass AGAINST, inverted',
+  wide:'The wide interval is the result: the two passes reach incompatible conclusions.',
+  pro:'Pass for',contra:'Pass against',derived:'derived',from:' from ',silenceMap:'Map of silence',
+  expected:'Expected to survive',cause:'Cause · survival',reviewed:(u,n)=>'Records reviewed · '+u+' of '+n+' used',
+  noneUsed:'Nothing that was found addresses the claim directly. The wide interval above comes from missing data, not from contradiction.',
+  falsifier:'What would refute it',readingReg:'Reading the register',register:'Register',noClaims:'No claims recorded yet.',
+  true:'true',false:'false',undet:'undetermined',recorded:'Recorded. This feeds the calibration.',
+  calcCal:'Computing calibration',ownCal:'Own calibration',calHint:' Mark the outcome of claims in the register to see a number here.',
+  resolved:'Resolved',slope:'Slope',brierNote:' Brier under 0.10 is good calibration, over 0.25 is poor. A positive slope means overrating.',other:'БГ'}
+};
+let LANG=(()=>{try{const s=localStorage.getItem('sombra_lang');if(s==='bg'||s==='en')return s;}catch(e){}
+  return (navigator.language||'bg').toLowerCase().startsWith('bg')?'bg':'en';})();
+const t=k=>I18N[LANG][k];
+let lastView=null; // текущият изглед се прерисува при смяна на езика
+function applyLang(){
+  document.documentElement.lang=LANG; document.title=t('title');
+  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
+  document.querySelectorAll('[data-i18n-ph]').forEach(el=>el.placeholder=t(el.dataset.i18nPh));
+  $('langBtn').textContent=t('other');
+  if(lastView) lastView();
+}
+function setLang(l){ LANG=l; try{localStorage.setItem('sombra_lang',l);}catch(e){} applyLang(); }
+// Сървърът пише служебните бележки на английски — тук се превеждат за БГ.
+const SRV_BG={'No resolved claims yet.':'Още няма разрешени твърдения.',
+  'The tool systematically overrates.':'Инструментът систематично надценява.',
+  'The tool systematically underrates.':'Инструментът систематично подценява.',
+  'No pronounced systematic bias.':'Няма изразено систематично отклонение.'};
+const srv=n=>{n=String(n??''); if(LANG!=='bg') return n;
+  return (SRV_BG[n]||n).replace(/ · Reviewed (\d+) records from Crossref, OpenAlex and Wikipedia\./,' · Прегледани $1 записа от Crossref, OpenAlex и Wikipedia.');};
+const S={get supported(){return t('supported')},get disputed(){return t('disputed')},get unverifiable(){return t('unverifiable')}};
 
 $('ep').value = localStorage.getItem('sombra_ep') || 'https://sombra.mihov-emil.workers.dev';
 $('tok').value = localStorage.getItem('sombra_tok') || '';
@@ -133,28 +197,28 @@ if(!$('tok').value) $('cfg').open = true;
 function saveCfg(){
   localStorage.setItem('sombra_ep',$('ep').value.trim().replace(/\/$/,''));
   localStorage.setItem('sombra_tok',$('tok').value.trim());
-  $('cfg').open=false; setStatus('Връзката е запазена.');
+  $('cfg').open=false; setStatus(t('saved'));
 }
 const ep=()=>$('ep').value.trim().replace(/\/$/,'');
 const tok=()=>$('tok').value.trim();
 const setStatus=(t,busy)=>$('status').innerHTML = busy ? t+'<span class="dot">…</span>' : esc(t);
-const fail=m=>$('out').innerHTML='<div class="error"><strong>Не се получи</strong>'+esc(m)+'</div>';
+const fail=m=>{lastView=null;$('out').innerHTML='<div class="error"><strong>'+t('failed')+'</strong>'+esc(m)+'</div>';};
 
 async function api(path,opts={}){
   const r=await fetch(ep()+path,{...opts,headers:{'Content-Type':'application/json',
     'Authorization':'Bearer '+tok(),...(opts.headers||{})}});
-  const d=await r.json().catch(()=>({error:'Отговорът не е JSON.'}));
+  const d=await r.json().catch(()=>({error:t('notJson')}));
   if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
   return d;
 }
 
 async function audit(){
   const text=$('hyp').value.trim();
-  if(!ep()||!tok()){ $('cfg').open=true; setStatus('Първо попълни адреса и токена.'); return; }
-  if(text.length<8){ setStatus('Твърдението е твърде кратко.'); return; }
-  $('go').disabled=true; $('out').innerHTML=''; setStatus('Пускам двата паса',1);
+  if(!ep()||!tok()){ $('cfg').open=true; setStatus(t('needCfg')); return; }
+  if(text.length<8){ setStatus(t('tooShort')); return; }
+  $('go').disabled=true; $('out').innerHTML=''; lastView=null; setStatus(t('running'),1);
   try{
-    const {run_id}=await api('/api/audit',{method:'POST',body:JSON.stringify({text})});
+    const {run_id}=await api('/api/audit',{method:'POST',body:JSON.stringify({text,lang:LANG})});
     await poll(run_id);
   }catch(e){ setStatus(''); fail(e.message); }
   finally{ $('go').disabled=false; }
@@ -164,31 +228,31 @@ async function poll(runId){
   for(let i=0;i<90;i++){
     await new Promise(r=>setTimeout(r,2500));
     const d=await api('/api/run/'+runId);
-    if(d.run.status==='done'){ setStatus('Готово. Проверявай връзките сам.'); return render(d); }
-    if(d.run.status==='error'){ setStatus(''); return fail(d.run.error||'Одитът прекъсна.'); }
-    setStatus('Търся източници · '+(i*2.5|0)+'с',1);
+    if(d.run.status==='done'){ setStatus(t('doneCheck')); lastView=()=>render(d); return render(d); }
+    if(d.run.status==='error'){ setStatus(''); return fail(d.run.error||t('aborted')); }
+    setStatus(t('searching')(i*2.5|0),1);
   }
-  setStatus(''); fail('Одитът се проточи. Пусни го пак.');
+  setStatus(''); fail(t('tooLong'));
 }
 
 function render(d){
   const r=d.run, lo=r.low||0, hi=r.high||0;
-  let h='<section><h2>Интервал на увереност</h2>';
-  h+='<p class="readout">'+lo+' – '+hi+'% <small>правдоподобност</small></p>';
+  let h='<section><h2>'+t('interval')+'</h2>';
+  h+='<p class="readout">'+lo+' – '+hi+'% <small>'+t('plaus')+'</small></p>';
   h+='<div class="track"><div class="unknown" style="left:0;width:'+lo+'%"></div>'+
      '<div class="band" style="left:'+lo+'%;width:'+(hi-lo)+'%"></div>'+
      '<div class="unknown" style="left:'+hi+'%;right:0"></div></div>';
-  h+='<div class="scale"><span>0 — изключено</span><span>100 — установено</span></div>';
-  h+='<div class="passes"><span>пас ЗА: '+r.pro_low+'–'+r.pro_high+'%</span>'+
-     '<span>пас СРЕЩУ, обърнат: '+(100-r.con_high)+'–'+(100-r.con_low)+'%</span></div>';
-  if(hi-lo>60) h+='<p style="color:var(--slate);font-size:15px">Широкият интервал е резултатът: двата паса стигат до несъвместими изводи.</p>';
-  if(r.note) h+='<p>'+esc(r.note)+'</p>';
+  h+='<div class="scale"><span>'+t('s0')+'</span><span>'+t('s100')+'</span></div>';
+  h+='<div class="passes"><span>'+t('passFor')+': '+r.pro_low+'–'+r.pro_high+'%</span>'+
+     '<span>'+t('passAgainst')+': '+(100-r.con_high)+'–'+(100-r.con_low)+'%</span></div>';
+  if(hi-lo>60) h+='<p style="color:var(--slate);font-size:15px">'+t('wide')+'</p>';
+  if(r.note) h+='<p>'+esc(srv(r.note))+'</p>';
   h+='</section>';
 
   for(const side of ['pro','contra']){
     const as=(d.atoms||[]).filter(a=>a.side===side);
     if(!as.length) continue;
-    h+='<section><h2>'+(side==='pro'?'Пас за':'Пас срещу')+'</h2>';
+    h+='<section><h2>'+t(side==='pro'?'pro':'contra')+'</h2>';
     for(const a of as){
       const st=['supported','disputed','unverifiable'].includes(a.status)?a.status:'unverifiable';
       h+='<div class="atom '+st+'"><span class="verdict">'+S[st]+'</span>';
@@ -199,7 +263,7 @@ function render(d){
         for(const s of a.sources){
           if(!s.resolvable){ h+='<li class="ghost">'+esc(s.ref)+'</li>'; continue; }
           h+='<li><a href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.ref)+'</a> · '+esc(s.kind||'');
-          if(!s.independent) h+=' <span class="derived">производен'+(s.derives_from?' от '+esc(s.derives_from):'')+'</span>';
+          if(!s.independent) h+=' <span class="derived">'+t('derived')+(s.derives_from?t('from')+esc(s.derives_from):'')+'</span>';
           h+='</li>';
         }
         h+='</ul>';
@@ -210,10 +274,10 @@ function render(d){
   }
 
   if(d.silence&&d.silence.length){
-    h+='<section><h2>Карта на мълчанието</h2><div class="silence">';
+    h+='<section><h2>'+t('silenceMap')+'</h2><div class="silence">';
     for(const g of d.silence){
-      h+='<div class="r"><div><span class="k">Очаквано да оцелее</span>'+esc(g.expected)+'</div>'+
-         '<div><span class="k">Причина · оцеляемост</span><span class="mono" style="font-size:11.5px;color:var(--slate)">'+
+      h+='<div class="r"><div><span class="k">'+t('expected')+'</span>'+esc(g.expected)+'</div>'+
+         '<div><span class="k">'+t('cause')+'</span><span class="mono" style="font-size:11.5px;color:var(--slate)">'+
          esc(g.cause)+' · '+Math.round((g.prior||0)*100)+'%</span></div></div>';
     }
     h+='</div></section>';
@@ -221,8 +285,8 @@ function render(d){
 
   if(d.reviewed && d.reviewed.length){
   const used=d.reviewed.filter(x=>x.cited).length;
-  h+='<section><h2>Прегледани записи · '+used+' от '+d.reviewed.length+' използвани</h2>';
-  if(!used) h+='<p style="color:var(--rust);font-size:15px">Нищо от намереното не се отнася пряко към твърдението. Широкият интервал по-горе идва от липса на данни, не от противоречие.</p>';
+  h+='<section><h2>'+t('reviewed')(used,d.reviewed.length)+'</h2>';
+  if(!used) h+='<p style="color:var(--rust);font-size:15px">'+t('noneUsed')+'</p>';
   h+='<ul class="src">';
   for(const x of d.reviewed){
     h+='<li'+(x.cited?'':' class="ghost"')+'><a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.ref)+'</a></li>';
@@ -230,52 +294,53 @@ function render(d){
   h+='</ul></section>';
 }
 
-  if(r.falsifier) h+='<section><h2>Какво би го оборило</h2><div class="falsifier">'+esc(r.falsifier)+'</div></section>';
+  if(r.falsifier) h+='<section><h2>'+t('falsifier')+'</h2><div class="falsifier">'+esc(r.falsifier)+'</div></section>';
   $('out').innerHTML=h;
 }
 
 async function loadClaims(){
-  setStatus('Чета регистъра',1);
+  setStatus(t('readingReg'),1);
   try{
     const {claims}=await api('/api/claims');
-    let h='<section><h2>Регистър</h2>';
-    if(!claims.length) h+='<p style="color:var(--dim)">Още няма записани твърдения.</p>';
+    let h='<section><h2>'+t('register')+'</h2>';
+    if(!claims.length) h+='<p style="color:var(--dim)">'+t('noClaims')+'</p>';
     for(const c of claims){
-      const p=c.resolution==='true'?'<span class="pill t">вярно</span>'
-        :c.resolution==='false'?'<span class="pill f">невярно</span>'
-        :c.resolution?'<span class="pill">неопределено</span>':'';
+      const p=c.resolution==='true'?'<span class="pill t">'+t('true')+'</span>'
+        :c.resolution==='false'?'<span class="pill f">'+t('false')+'</span>'
+        :c.resolution?'<span class="pill">'+t('undet')+'</span>':'';
       h+='<div class="claimrow"><div class="t">'+esc(c.text)+' '+p+
          '<br><span class="mono" style="font-size:10.5px;color:var(--dim)">'+esc(c.id)+'</span></div>';
       if(!c.resolution) h+='<div class="row" style="margin:0">'+
-        '<button class="ghost" onclick="resolve(\''+c.id+'\',\'true\')">вярно</button>'+
-        '<button class="ghost" onclick="resolve(\''+c.id+'\',\'false\')">невярно</button></div>';
+        '<button class="ghost" onclick="resolve(\''+c.id+'\',\'true\')">'+t('true')+'</button>'+
+        '<button class="ghost" onclick="resolve(\''+c.id+'\',\'false\')">'+t('false')+'</button></div>';
       h+='</div>';
     }
-    $('out').innerHTML=h+'</section>'; setStatus('');
+    $('out').innerHTML=h+'</section>'; setStatus(''); lastView=()=>loadClaims();
   }catch(e){ setStatus(''); fail(e.message); }
 }
 
 async function resolve(id,res){
   try{ await api('/api/resolve',{method:'POST',body:JSON.stringify({claim_id:id,resolution:res})});
-    setStatus('Записано. Това храни калибрацията.'); loadClaims();
+    setStatus(t('recorded')); loadClaims();
   }catch(e){ fail(e.message); }
 }
 
 async function loadCalib(){
-  setStatus('Смятам калибрацията',1);
+  setStatus(t('calcCal'),1);
   try{
     const c=await api('/api/calibration');
-    let h='<section><h2>Собствена калибрация</h2>';
-    if(!c.n){ h+='<p style="color:var(--dim)">'+esc(c.note)+' Маркирай изхода на твърдения от регистъра, за да се появи число тук.</p>'; }
+    let h='<section><h2>'+t('ownCal')+'</h2>';
+    if(!c.n){ h+='<p style="color:var(--dim)">'+esc(srv(c.note))+t('calHint')+'</p>'; }
     else{
-      h+='<div class="calib"><div><span>Разрешени</span><strong>'+c.n+'</strong></div>'+
+      h+='<div class="calib"><div><span>'+t('resolved')+'</span><strong>'+c.n+'</strong></div>'+
          '<div><span>Brier score</span><strong>'+c.brier+'</strong></div>'+
-         '<div><span>Наклон</span><strong>'+(c.bias>0?'+':'')+c.bias+'</strong></div></div>';
-      h+='<p style="margin-top:14px">'+esc(c.note)+' Brier под 0.10 е добра калибрация, над 0.25 — лоша. Положителен наклон значи надценяване.</p>';
+         '<div><span>'+t('slope')+'</span><strong>'+(c.bias>0?'+':'')+c.bias+'</strong></div></div>';
+      h+='<p style="margin-top:14px">'+esc(srv(c.note))+t('brierNote')+'</p>';
     }
-    $('out').innerHTML=h+'</section>'; setStatus('');
+    $('out').innerHTML=h+'</section>'; setStatus(''); lastView=()=>loadCalib();
   }catch(e){ setStatus(''); fail(e.message); }
 }
+applyLang();
 </script>
 </body>
 </html>
