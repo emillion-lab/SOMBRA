@@ -142,6 +142,7 @@ const I18N={
   tooLong:'Одитът се проточи. Пусни го пак.',interval:'Интервал на увереност',plaus:'правдоподобност',
   s0:'0 — изключено',s100:'100 — установено',passFor:'пас ЗА',passAgainst:'пас СРЕЩУ, обърнат',
   wide:'Широкият интервал е резултатът: двата паса стигат до несъвместими изводи.',
+  sparse:'Интервалът е широк, защото намереното не казва достатъчно — двата паса не си противоречат.',
   pro:'Пас за',contra:'Пас срещу',derived:'производен',from:' от ',silenceMap:'Карта на мълчанието',
   expected:'Очаквано да оцелее',cause:'Причина · оцеляемост',reviewed:(u,n)=>'Прегледани записи · '+u+' от '+n+' използвани',
   noneUsed:'Нищо от намереното не се отнася пряко към твърдението. Широкият интервал по-горе идва от липса на данни, не от противоречие.',
@@ -161,6 +162,7 @@ const I18N={
   tooLong:'The audit took too long. Run it again.',interval:'Confidence interval',plaus:'plausibility',
   s0:'0 — ruled out',s100:'100 — established',passFor:'pass FOR',passAgainst:'pass AGAINST, inverted',
   wide:'The wide interval is the result: the two passes reach incompatible conclusions.',
+  sparse:'The interval is wide because what was found says too little — the two passes do not contradict each other.',
   pro:'Pass for',contra:'Pass against',derived:'derived',from:' from ',silenceMap:'Map of silence',
   expected:'Expected to survive',cause:'Cause · survival',reviewed:(u,n)=>'Records reviewed · '+u+' of '+n+' used',
   noneUsed:'Nothing that was found addresses the claim directly. The wide interval above comes from missing data, not from contradiction.',
@@ -187,7 +189,9 @@ const SRV_BG={'No resolved claims yet.':'Още няма разрешени тв
   'The tool systematically underrates.':'Инструментът систематично подценява.',
   'No pronounced systematic bias.':'Няма изразено систематично отклонение.'};
 const srv=n=>{n=String(n??''); if(LANG!=='bg') return n;
-  return (SRV_BG[n]||n).replace(/ · Reviewed (\d+) records from Crossref, OpenAlex and Wikipedia\./,' · Прегледани $1 записа от Crossref, OpenAlex и Wikipedia.');};
+  return (SRV_BG[n]||n)
+    .replace(/ · Reviewed (\d+) records \((\d+) with content\) from Wikipedia, OpenAlex and Crossref\./,' · Прегледани $1 записа ($2 със съдържание) от Wikipedia, OpenAlex и Crossref.')
+    .replace(/ · Reviewed (\d+) records from Crossref, OpenAlex and Wikipedia\./,' · Прегледани $1 записа от Crossref, OpenAlex и Wikipedia.');};
 const S={get supported(){return t('supported')},get disputed(){return t('disputed')},get unverifiable(){return t('unverifiable')}};
 
 $('ep').value = localStorage.getItem('sombra_ep') || 'https://sombra.mihov-emil.workers.dev';
@@ -245,7 +249,10 @@ function render(d){
   h+='<div class="scale"><span>'+t('s0')+'</span><span>'+t('s100')+'</span></div>';
   h+='<div class="passes"><span>'+t('passFor')+': '+r.pro_low+'–'+r.pro_high+'%</span>'+
      '<span>'+t('passAgainst')+': '+(100-r.con_high)+'–'+(100-r.con_low)+'%</span></div>';
-  if(hi-lo>60) h+='<p style="color:var(--slate);font-size:15px">'+t('wide')+'</p>';
+  // несъгласие = средите на двата паса са далеч една от друга; иначе широкото е от липса на данни
+  const proMid=(r.pro_low+r.pro_high)/2, conMid=100-(r.con_low+r.con_high)/2;
+  if(Math.abs(proMid-conMid)>25) h+='<p style="color:var(--slate);font-size:15px">'+t('wide')+'</p>';
+  else if(hi-lo>60) h+='<p style="color:var(--slate);font-size:15px">'+t('sparse')+'</p>';
   if(r.note) h+='<p>'+esc(srv(r.note))+'</p>';
   h+='</section>';
 
@@ -278,7 +285,7 @@ function render(d){
     for(const g of d.silence){
       h+='<div class="r"><div><span class="k">'+t('expected')+'</span>'+esc(g.expected)+'</div>'+
          '<div><span class="k">'+t('cause')+'</span><span class="mono" style="font-size:11.5px;color:var(--slate)">'+
-         esc(g.cause)+' · '+Math.round((g.prior||0)*100)+'%</span></div></div>';
+         esc(g.cause)+' · '+(g.prior==null?'—':Math.round(g.prior*100)+'%')+'</span></div></div>';
     }
     h+='</div></section>';
   }
@@ -289,7 +296,8 @@ function render(d){
   if(!used) h+='<p style="color:var(--rust);font-size:15px">'+t('noneUsed')+'</p>';
   h+='<ul class="src">';
   for(const x of d.reviewed){
-    h+='<li'+(x.cited?'':' class="ghost"')+'><a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.ref)+'</a></li>';
+    h+='<li'+(x.cited?'':' class="ghost"')+'><a href="'+esc(x.url)+'" target="_blank" rel="noopener" title="'+esc(x.text||'')+'">'+esc(x.ref)+'</a>'+
+       (x.cited&&x.text?'<div style="font-size:11.5px;color:var(--dim);margin-top:3px">„'+esc(x.text.slice(0,240))+'…“</div>':'')+'</li>';
   }
   h+='</ul></section>';
 }
